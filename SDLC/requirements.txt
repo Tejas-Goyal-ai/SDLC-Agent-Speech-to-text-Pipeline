@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+torch
+silero-vad
+numpy
+websockets

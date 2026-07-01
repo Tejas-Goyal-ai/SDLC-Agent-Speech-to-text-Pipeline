@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PCM Audio Streaming</title>
+</head>
+<body>
+
+<h2>SDLC Agent - PCM Streaming</h2>
+
+<button id="startBtn">Start Capture</button>
+
+<script>
+
+let socket;
+
+document.getElementById("startBtn").addEventListener("click", async () => {
+
+    socket = new WebSocket("ws://localhost:8001/audio");
+
+    socket.binaryType = "arraybuffer";
+
+    socket.onopen = async () => {
+
+        console.log("✅ WebSocket Connected");
+
+        const tabStream =
+            await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: true
+            });
+
+        const micStream =
+            await navigator.mediaDevices.getUserMedia({
+                audio: true
+            });
+
+        const audioContext =
+            new AudioContext({
+                sampleRate: 16000
+            });
+
+        // ==========================
+        // STOP EVERYTHING WHEN SHARE ENDS
+        // ==========================
+
+        const stopEverything = () => {
+
+            console.log("🛑 Screen Sharing Stopped");
+
+            tabStream.getTracks().forEach(track => track.stop());
+            micStream.getTracks().forEach(track => track.stop());
+
+            audioContext.close();
+
+            if (
+                socket &&
+                socket.readyState === WebSocket.OPEN
+            ) {
+                socket.close();
+            }
+
+            console.log("✅ All Resources Released");
+        };
+
+        const videoTrack =
+            tabStream.getVideoTracks()[0];
+
+        if (videoTrack) {
+            videoTrack.onended = stopEverything;
+        }
+
+        // ==========================
+        // AUDIO MIXING
+        // ==========================
+
+        const destination =
+            audioContext.createMediaStreamDestination();
+
+        const tabSource =
+            audioContext.createMediaStreamSource(tabStream);
+
+        const micSource =
+            audioContext.createMediaStreamSource(micStream);
+
+        tabSource.connect(destination);
+        micSource.connect(destination);
+
+        const processor =
+            audioContext.createScriptProcessor(
+                4096,
+                1,
+                1
+            );
+
+        const source =
+            audioContext.createMediaStreamSource(
+                destination.stream
+            );
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+
+        processor.onaudioprocess = (event) => {
+
+            const input =
+                event.inputBuffer.getChannelData(0);
+
+            const float32 =
+                new Float32Array(input);
+
+            if (
+                socket &&
+                socket.readyState === WebSocket.OPEN
+            ) {
+                socket.send(float32.buffer);
+            }
+        };
+
+        console.log(
+            "🚀 PCM Streaming Started"
+        );
+    };
+
+    socket.onclose = () => {
+        console.log("❌ Socket Closed");
+    };
+
+    socket.onerror = (e) => {
+        console.error(e);
+    };
+});
+
+</script>
+
+</body>
+</html>
